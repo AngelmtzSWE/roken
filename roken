@@ -1,0 +1,174 @@
+
+//  ContentView.swift
+//  Roken
+//
+//  Created by Angel Martinez on 10/1/25.
+//
+
+import SwiftUI
+import Combine // Needed for ObservableObject/@Published/@StateObject
+
+struct Item: Identifiable {
+    let id = UUID()
+    var title: String
+    var price: String
+    var description: String
+}
+
+class ItemViewModel: ObservableObject {
+    @Published var items: [Item] = []
+    
+    func addItem(title: String, price: String, description: String) {
+        let newItem = Item(title: title, price: price, description: description)
+        items.append(newItem)
+    }
+}
+
+@main
+struct RokenApp: App {
+    @StateObject var itemVM = ItemViewModel()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(itemVM)
+        }
+    }
+}
+
+struct ContentView: View {
+    @EnvironmentObject var itemVM: ItemViewModel
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                // ✅ Full orange background
+                Color.orange.ignoresSafeArea()
+                
+                VStack {
+                    if itemVM.items.isEmpty {
+                        Spacer()
+                        Text("No Items posted yet")
+                            .foregroundColor(.white)
+                            .font(.title2)
+                            .padding()
+                            .background(Color.black.opacity(0.2))
+                            .cornerRadius(12)
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 16) {
+                                ForEach(itemVM.items) { item in
+                                    NavigationLink(destination: ItemDetailView(item: item)) {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text(item.title)
+                                                .font(.headline)
+                                                .foregroundColor(.black)
+                                            Text("$\(item.price)")
+                                                .foregroundColor(.green)
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(Color.white.opacity(0.9))
+                                        .cornerRadius(16)
+                                    }
+                                }
+                            }
+                            .padding()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Roken")
+            .toolbar {
+                NavigationLink(destination: AddItemView()) {
+                    Image(systemName: "plus")
+                        .imageScale(.large)
+                        .foregroundStyle(.tint)
+                }
+            }
+        }
+    }
+}
+
+struct ItemDetailView: View {
+    var item: Item
+
+    var body: some View {
+        ZStack {
+            Color.orange.ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 20) {
+                Text(item.title)
+                    .font(.largeTitle)
+                    .bold()
+                
+                Text("Price: $\(item.price)")
+                    .font(.title2)
+                    .foregroundColor(.green)
+                
+                Text("Description:")
+                    .font(.headline)
+                
+                Text(item.description)
+                    .padding(.bottom, 50)
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Item details")
+        }
+    }
+}
+
+struct AddItemView: View {
+    @EnvironmentObject var itemVM: ItemViewModel
+    @Environment(\.dismiss) var dismiss
+    
+    @State private var title: String = ""
+    @State private var price: String = ""
+    @State private var description: String = ""
+    
+    var body: some View {
+        ZStack {
+            Color.orange.ignoresSafeArea()
+            VStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Item Info")
+                        .font(.title2)
+                        .bold()
+                        .foregroundColor(.white)
+                    TextField("Title", text: $title)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Price", text: $price)
+                        .keyboardType(.decimalPad)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Description", text: $description)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .padding()
+                .background(.orange.opacity(0.3))
+                .cornerRadius(16)
+                
+                Button(action: {
+                    itemVM.addItem(title: title, price: price, description: description)
+                    dismiss()
+                }) {
+                    Text("Post Item")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .disabled(title.isEmpty || price.isEmpty || description.isEmpty)
+            }
+            .padding()
+            .navigationTitle("Add Item")
+        }
+    }
+}
+
+#Preview {
+    ContentView()
+        .environmentObject(ItemViewModel())
+}
