@@ -1,48 +1,82 @@
-
+//
 //  ContentView.swift
 //  Roken
 //
-//  Created by Angel Martinez on 10/1/25.
+//  Updated with MULTIPLE photos + REMOVE button
 //
 
 import SwiftUI
-import Combine // Needed for ObservableObject/@Published/@StateObject
+import Combine
+import PhotosUI
 
-struct Item: Identifiable {
+// MARK: - Model
+struct Item: Identifiable, Codable {
     let id = UUID()
     var title: String
     var price: String
     var description: String
+    var imageDataArray: [Data] = []   // ← Now an array!
 }
 
+// MARK: - ViewModel
 class ItemViewModel: ObservableObject {
     @Published var items: [Item] = []
     
-    func addItem(title: String, price: String, description: String) {
-        let newItem = Item(title: title, price: price, description: description)
+    private static let itemsKey = "SavedRokenItems"
+    
+    func addItem(title: String,
+                 price: String,
+                 description: String,
+                 imageDataArray: [Data]) {
+        let newItem = Item(title: title,
+                           price: price,
+                           description: description,
+                           imageDataArray: imageDataArray)
         items.append(newItem)
+        save()
+    }
+    
+    // MARK: Persistence
+    func save() {
+        if let encoded = try? JSONEncoder().encode(items) {
+            UserDefaults.standard.set(encoded, forKey: Self.itemsKey)
+        }
+    }
+    
+    func load() {
+        guard let data = UserDefaults.standard.data(forKey: Self.itemsKey),
+              let decoded = try? JSONDecoder().decode([Item].self, from: data) else { return }
+        items = decoded
     }
 }
 
+// MARK: - App Entry
 @main
 struct RokenApp: App {
-    @StateObject var itemVM = ItemViewModel()
+    @StateObject private var itemVM = ItemViewModel()
+    
+    init() {
+        _itemVM.wrappedValue.load()
+    }
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(itemVM)
+                .onReceive(itemVM.$items) { _ in
+                    itemVM.save()
+                }
         }
     }
 }
 
+// MARK: - Main List
 struct ContentView: View {
     @EnvironmentObject var itemVM: ItemViewModel
     
     var body: some View {
         NavigationStack {
             ZStack {
-                // ✅ Full orange background
                 Color.orange.ignoresSafeArea()
                 
                 VStack {
@@ -60,15 +94,45 @@ struct ContentView: View {
                             VStack(spacing: 16) {
                                 ForEach(itemVM.items) { item in
                                     NavigationLink(destination: ItemDetailView(item: item)) {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text(item.title)
-                                                .font(.headline)
-                                                .foregroundColor(.black)
-                                            Text("$\(item.price)")
-                                                .foregroundColor(.green)
+                                        HStack(spacing: 12) {
+                                            // First image as thumbnail
+                                            if let firstData = item.imageDataArray.first,
+                                               let uiImage = UIImage(data: firstData) {
+                                                Image(uiImage: uiImage)
+                                                    .resizable()
+                                                    .scaledToFill()
+                                                    .frame(width: 60, height: 60)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            } else {
+                                                Rectangle()
+                                                    .fill(Color.gray.opacity(0.3))
+                                                    .frame(width: 60, height: 60)
+                                                    .overlay(
+                                                        Image(systemName: "photo")
+                                                            .foregroundColor(.white)
+                                                    )
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            }
+                                            
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(item.title)
+                                                    .font(.headline)
+                                                    .foregroundColor(.black)
+                                                Text("$\(item.price)")
+                                                    .foregroundColor(.green)
+                                            }
+                                            Spacer()
+                                            
+                                            if item.imageDataArray.count > 1 {
+                                                Text("+\(item.imageDataArray.count - 1)")
+                                                    .font(.caption)
+                                                    .padding(6)
+                                                    .background(Color.blue.opacity(0.7))
+                                                    .foregroundColor(.white)
+                                                    .clipShape(Circle())
+                                            }
                                         }
                                         .padding()
-                                        .frame(maxWidth: .infinity, alignment: .leading)
                                         .background(Color.white.opacity(0.9))
                                         .cornerRadius(16)
                                     }
@@ -91,35 +155,62 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Detail View (Gallery)
 struct ItemDetailView: View {
     var item: Item
-
+    
     var body: some View {
         ZStack {
             Color.orange.ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 20) {
-                Text(item.title)
-                    .font(.largeTitle)
-                    .bold()
-                
-                Text("Price: $\(item.price)")
-                    .font(.title2)
-                    .foregroundColor(.green)
-                
-                Text("Description:")
-                    .font(.headline)
-                
-                Text(item.description)
-                    .padding(.bottom, 50)
-                
-                Spacer()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Image Gallery
+                    if !item.imageDataArray.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(item.imageDataArray, id: \.self) { data in
+                                    if let uiImage = UIImage(data: data) {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(height: 220)
+                                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 16)
+                                                    .stroke(Color.white, lineWidth: 2)
+                                            )
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .padding(.bottom, 8)
+                    }
+                    
+                    Text(item.title)
+                        .font(.largeTitle)
+                        .bold()
+                    
+                    Text("Price: $\(item.price)")
+                        .font(.title2)
+                        .foregroundColor(.green)
+                    
+                    Text("Description:")
+                        .font(.headline)
+                    
+                    Text(item.description)
+                        .padding(.bottom, 50)
+                    
+                    Spacer()
+                }
+                .padding()
             }
-            .padding()
             .navigationTitle("Item details")
         }
     }
 }
 
+// MARK: - Add Item View (Multiple Photos + Remove)
 struct AddItemView: View {
     @EnvironmentObject var itemVM: ItemViewModel
     @Environment(\.dismiss) var dismiss
@@ -127,16 +218,20 @@ struct AddItemView: View {
     @State private var title: String = ""
     @State private var price: String = ""
     @State private var description: String = ""
+    @State private var selectedPhotos: [PhotosPickerItem] = []
+    @State private var previewImages: [UIImage] = []
     
     var body: some View {
         ZStack {
             Color.orange.ignoresSafeArea()
             VStack(spacing: 24) {
+                // ----- Item Info -----
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Item Info")
                         .font(.title2)
                         .bold()
                         .foregroundColor(.white)
+                    
                     TextField("Title", text: $title)
                         .textFieldStyle(.roundedBorder)
                     TextField("Price", text: $price)
@@ -149,8 +244,73 @@ struct AddItemView: View {
                 .background(.orange.opacity(0.3))
                 .cornerRadius(16)
                 
+                // ----- Photo Picker -----
+                PhotosPicker(selection: $selectedPhotos,
+                             maxSelectionCount: 10,
+                             matching: .images,
+                             photoLibrary: .shared()) {
+                    Label("Add Photos (\(previewImages.count)/10)", systemImage: "photo")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue.opacity(0.8))
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .onChange(of: selectedPhotos) { newPhotos in
+                    Task {
+                        var newImages: [UIImage] = []
+                        for photo in newPhotos {
+                            if let data = try? await photo.loadTransferable(type: Data.self),
+                               let image = UIImage(data: data) {
+                                newImages.append(image)
+                            }
+                        }
+                        // Replace with new selection (PhotosPicker replaces entire array)
+                        previewImages = newImages
+                    }
+                }
+                
+                // ----- Photo Grid Preview with Remove Button -----
+                if !previewImages.isEmpty {
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 12) {
+                        ForEach(previewImages.indices, id: \.self) { index in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: previewImages[index])
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(height: 120)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white, lineWidth: 2)
+                                    )
+                                
+                                Button(action: {
+                                    previewImages.remove(at: index)
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                        .background(Color.white.clipShape(Circle()))
+                                        .font(.title3)
+                                }
+                                .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // ----- Post Button -----
                 Button(action: {
-                    itemVM.addItem(title: title, price: price, description: description)
+                    let imageDataArray = previewImages.compactMap { $0.jpegData(compressionQuality: 0.8) }
+                    itemVM.addItem(title: title,
+                                   price: price,
+                                   description: description,
+                                   imageDataArray: imageDataArray)
                     dismiss()
                 }) {
                     Text("Post Item")
@@ -168,7 +328,9 @@ struct AddItemView: View {
     }
 }
 
+// MARK: - Preview
 #Preview {
     ContentView()
         .environmentObject(ItemViewModel())
 }
+
